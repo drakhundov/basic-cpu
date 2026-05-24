@@ -25,7 +25,7 @@ module DataMemoryUnit (
   DataRegister DR (
       .Clock(Clock),
       .I(MemOut),
-      .E(CS),
+      .E(~WR && CS),
       .FunSel(FunSel),
       .DROut(DMUOut)
   );

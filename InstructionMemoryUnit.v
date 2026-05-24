@@ -1,6 +1,5 @@
 `timescale 1ns / 1ps
 
-
 module InstructionMemoryUnit (
     input wire Clock,
     input wire [15:0] Address,
@@ -8,7 +7,7 @@ module InstructionMemoryUnit (
     input wire LH,
 
     output wire [15:0] IROut,
-    output wire [15:0] IMUOut // LSB of IROut.
+    output wire [15:0] IMUOut  // LSB of IROut.
 );
   wire [7:0] MemOut;
 

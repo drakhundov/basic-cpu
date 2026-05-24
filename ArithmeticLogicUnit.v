@@ -121,6 +121,7 @@ module ArithmeticLogicUnit (
   end
 
   always @(posedge Clock) begin
+    // Flags = [Overflow, Negative, Carry, Zero].
     if (WF == 1) begin
       FlagsOut[3] <= Z;
 
