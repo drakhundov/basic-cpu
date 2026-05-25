@@ -78,6 +78,52 @@ module CPUSystem (
     T_Reset = 1'b1;
   endtask
 
+  //* Loads from source register to RF scratch
+  task load_into_scr;
+    input [3:0] inscr;
+    input [2:0] regsel;  // SrcReg1 or SrcReg2
+    RF_ScrSel = inscr;
+    RF_FunSel = 2'b01;  // Set to Load
+    if (arf_is_selected(regsel)) begin
+      // Copy from ARF to RF Scr
+      ARF_OutCSel = regsel[1:0];
+      MuxASel = 2'b01;  // RF.I is set to MuxAOut
+    end else begin
+      // Copy from RF to RF Scr
+      RF_OutASel = {1'b0, regsel[1:0]};
+      ALU_FunSel = 4'b0000;  // Output A
+    end
+  endtask
+
+  task unload_scr;
+    input [2:0] outscr;
+    ALU_FunSel = 4'b0000;
+    RF_OutASel = outscr;
+    if (arf_is_selected(DestReg)) begin
+      // Destination is ARF
+      ARF_RegSel = arf_en_from_opcode(DestReg);
+      ARF_FunSel = 2'b01;  // Set to Load
+      MuxBSel = 2'b00;  // MuxBOut is redirected into ARF
+    end else begin
+      // Destination is RF
+      RF_RegSel = rf_en_from_opcode(DestReg);
+      RF_FunSel = 2'b01;  // Set to Load
+      MuxASel   = 2'b00;
+    end
+  endtask
+
+  task unload_alu;
+    if (arf_is_selected(DestReg)) begin
+      MuxBSel = 2'b00;     // Select ALUOut
+      ARF_FunSel = 2'b01;  // Set to Load
+      ARF_RegSel = arf_en_from_opcode(DestReg);
+    end else begin
+      MuxASel   = 2'b00;  // Select ALUOut
+      RF_FunSel = 2'b01;  // Set to Load
+      RF_RegSel = rf_en_from_opcode(DestReg);
+    end
+  endtask
+
   initial begin
     // Initialize sequence counter
     // ! It is important to do since T_Reset only activates on clock edge
@@ -184,67 +230,68 @@ module CPUSystem (
           exec_branch(Flags[1] == Flags[0]);  // N==0.
           T_Reset = 1'b1;
         end
-        6'h07: begin
-          // DSTREG <- SREG1 + 1
-          // First sequence
+        6'h07, 6'h08, 6'h09, 6'h0A, 6'h0B, 6'h0C, 6'h0D, 6'h0E: begin
+          // 6'h07: DSTREG <- SREG1 + 1
+          // 6'h08: DSTREG <- SREG1 - 1
+          // 6'h09: DSTREG <- LSL SREG1
+          // 6'h0A: DSTREG <- LSR SREG1
+          // 6'h0B: DSTREG <- ASR SREG1
+          // 6'h0C: DSTREG <- CSL SREG1
+          // 6'h0D: DSTREG <- CSR SREG1
+          // 6'h0E: DSTREG <- NOT SREG1
+          //! All operations require loading SREG1 into Scr1
           // Check if DESTREG == SREG1
-          if (DestSrc1SameCond) begin
+          // ! Only applicable for INC and DEC due to built-in register functionality
+          if ((Opcode == 6'h07 || Opcode == 6'h08) && DestSrc1SameCond) begin
             // Just apply Inc inside the register
             if (arf_is_selected(SrcReg1)) begin
               ARF_RegSel = arf_en_from_opcode(SrcReg1);
-              ARF_FunSel = 2'b10;
+              ARF_FunSel = (Opcode == 6'h07) ? 2'b10 : 2'b11;
             end else begin
               RF_RegSel = rf_en_from_opcode(SrcReg1);
-              RF_FunSel = 2'b10;
+              RF_FunSel = (Opcode == 6'h07) ? 2'b10 : 2'b11;
             end
             T_Reset = 1'b1;
           end else begin
             // Load SREG1 into Scr1
-            RF_ScrSel = 4'b0111;  // Select Src1
-            RF_FunSel = 2'b01;  // Set to Load
-            if (arf_is_selected(SrcReg1)) begin
-              // Copy from ARF to RF Scr
-              ARF_OutCSel = SrcReg1[1:0];
-              MuxASel = 2'b01;  // RF.I is set to MuxAOut
-            end else begin
-              // Copy from RF to RF Scr
-              RF_OutASel = {1'b0, SrcReg1[1:0]};
-              ALU_FunSel = 4'b0000;  // Output A
-            end
+            load_into_scr(4'b0111, SrcReg1);
           end
         end
         default: T_Reset = 1'b1;
       endcase
     end else if (T[3]) begin
       case (Opcode)
-        6'h07: begin
-          // DSTREG <- SREG1 + 1
-          // Second sequence
-          // Compute Scr1 + 1
+        6'h07, 6'h08: begin
+          // 6'h07: DSTREG <- SREG1 + 1
+          // 6'h08: DSTREG <- SREG1 - 1
+          // Use register's built-in functionality
           RF_ScrSel = 4'b0111;  // Select Scr1
-          RF_FunSel = 2'b10;  // Set to Inc
+          RF_FunSel = (Opcode == 6'h07) ? 2'b10 : 2'b11;  // Set to Inc or Dec
+        end
+        6'h09, 6'h0A, 6'h0B, 6'h0C, 6'h0D, 6'h0E: begin
+          // 6'h09: DSTREG <- LSL SREG1
+          // 6'h0A: DSTREG <- LSR SREG1
+          // 6'h0B: DSTREG <- ASR SREG1
+          // 6'h0C: DSTREG <- CSL SREG1
+          // 6'h0D: DSTREG <- CSR SREG1
+          // 6'h0E: DSTREG <- NOT SREG1
+          // All these operations rely on ALU for a single-variable operation
+          RF_OutASel = 3'b100;  // Load Scr1 into ALU
+          //* ALU_FunSel is set at the top based on opcode
+          // Redirect ALUOut to DESTREG
+          unload_alu();
+          T_Reset = 1'b1;
         end
         default: T_Reset = 1'b1;
       endcase
     end else if (T[4]) begin
       case (Opcode)
-        6'h07: begin
-          // DSTREG <- SREG1 + 1
-          // Third sequence
+        6'h07, 6'h08: begin
+          // 6'h07: DSTREG <- SREG1 + 1
+          // 6'h08: DSTREG <- SREG1 - 1
+          //* Both operations require loading Scr1 into DESTREG
           // Load Scr1 into DSTREG
-          ALU_FunSel = 4'b0000;
-          RF_OutASel = 3'b100;
-          if (arf_is_selected(DestReg)) begin
-            // Destination is ARF
-            ARF_RegSel = arf_en_from_opcode(DestReg);
-            ARF_FunSel = 2'b01;  // Set to Load
-            MuxBSel = 2'b00;  // MuxBOut is redirected into ARF
-          end else begin
-            // Destination is RF
-            RF_RegSel = rf_en_from_opcode(DestReg);
-            RF_FunSel = 2'b01;  // Set to Load
-            MuxASel   = 2'b00;
-          end
+          unload_scr(3'b100);
           T_Reset = 1'b1;
         end
         default: T_Reset = 1'b1;
