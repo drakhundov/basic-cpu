@@ -102,6 +102,15 @@ module FileOperation ();
   endtask
 endmodule
 
+module CrystalOscillator;
+  reg clock = 0;
+
+  task Clock;
+    clock = ~clock;
+  endtask
+
+endmodule
+
 module ResetGenerator;
   reg reset;
 

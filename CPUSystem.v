@@ -19,26 +19,26 @@ module CPUSystem (
   wire [15:0] IR_Out;
   wire [3:0] Flags;
 
-  wire [5:0] Opcode;
-  wire [1:0] RegSel;
-  wire [2:0] DestReg;
-  wire [2:0] SrcReg1;
-  wire [2:0] SrcReg2;
-  wire [7:0] Address;
+  wire [5:0] OPC;
+  wire [1:0] RSEL;
+  wire [2:0] DSTREG;
+  wire [2:0] SREG1;
+  wire [2:0] SREG2;
+  wire [7:0] ADDR;
 
-  assign IR_Out  = ALUSys.IROut;
-  assign Flags   = ALUSys.FlagsOut;
+  assign IR_Out = ALUSys.IROut;
+  assign Flags = ALUSys.FlagsOut;
 
-  assign Opcode  = IR_Out[15:10];
-  assign RegSel  = IR_Out[9:8];
-  assign DestReg = IR_Out[9:7];
-  assign SrcReg1 = IR_Out[6:4];
-  assign SrcReg2 = IR_Out[3:1];
-  assign Address = IR_Out[7:0];
+  assign OPC = IR_Out[15:10];
+  assign RSEL = IR_Out[9:8];
+  assign DSTREG = IR_Out[9:7];
+  assign SREG1 = IR_Out[6:4];
+  assign SREG2 = IR_Out[3:1];
+  assign ADDR = IR_Out[7:0];
 
   // Conditions.
   wire DestSrc1SameCond;
-  assign DestSrc1SameCond = DestReg == SrcReg1;
+  assign DestSrc1SameCond = DSTREG == SREG1;
 
   function arf_is_selected;
     input [2:0] op_reg_sel;
@@ -81,7 +81,7 @@ module CPUSystem (
   //* Loads from source register to RF scratch
   task load_into_scr;
     input [3:0] inscr;
-    input [2:0] regsel;  // SrcReg1 or SrcReg2
+    input [2:0] regsel;  // SREG1 or SREG2
     RF_ScrSel = inscr;
     RF_FunSel = 2'b01;  // Set to Load
     if (arf_is_selected(regsel)) begin
@@ -99,28 +99,30 @@ module CPUSystem (
     input [2:0] outscr;
     ALU_FunSel = 4'b0000;
     RF_OutASel = outscr;
-    if (arf_is_selected(DestReg)) begin
+    if (arf_is_selected(DSTREG)) begin
       // Destination is ARF
-      ARF_RegSel = arf_en_from_opcode(DestReg);
+      ARF_RegSel = arf_en_from_opcode(DSTREG);
       ARF_FunSel = 2'b01;  // Set to Load
       MuxBSel = 2'b00;  // MuxBOut is redirected into ARF
     end else begin
       // Destination is RF
-      RF_RegSel = rf_en_from_opcode(DestReg);
+      RF_RegSel = rf_en_from_opcode(DSTREG);
       RF_FunSel = 2'b01;  // Set to Load
       MuxASel   = 2'b00;
     end
   endtask
 
   task unload_alu;
-    if (arf_is_selected(DestReg)) begin
+    RF_OutASel = 3'b100;  // Scr1
+    RF_OutBSel = 3'b101;  // Scr2
+    if (arf_is_selected(DSTREG)) begin
       MuxBSel = 2'b00;     // Select ALUOut
       ARF_FunSel = 2'b01;  // Set to Load
-      ARF_RegSel = arf_en_from_opcode(DestReg);
+      ARF_RegSel = arf_en_from_opcode(DSTREG);
     end else begin
       MuxASel   = 2'b00;  // Select ALUOut
       RF_FunSel = 2'b01;  // Set to Load
-      RF_RegSel = rf_en_from_opcode(DestReg);
+      RF_RegSel = rf_en_from_opcode(DSTREG);
     end
   endtask
 
@@ -143,7 +145,7 @@ module CPUSystem (
     ARF_RegSel = 3'b111;
     RF_FunSel  = 2'b01;
     ARF_FunSel = 2'b01;
-    case (Opcode)
+    case (OPC)
       6'h07:   ALU_FunSel = 4'b0100;
       6'h08:   ALU_FunSel = 4'b0110;
       6'h09:   ALU_FunSel = 4'b1011;
@@ -195,7 +197,7 @@ module CPUSystem (
       ARF_RegSel = 3'b011;
       ARF_FunSel = 2'b10;
     end else if (T[2]) begin
-      case (Opcode)
+      case (OPC)
         6'h00: begin
           exec_branch(1);  // Unconditional branch.
           T_Reset = 1'b1;
@@ -230,7 +232,35 @@ module CPUSystem (
           exec_branch(Flags[1] == Flags[0]);  // N==0.
           T_Reset = 1'b1;
         end
-        6'h07, 6'h08, 6'h09, 6'h0A, 6'h0B, 6'h0C, 6'h0D, 6'h0E: begin
+        6'h16: begin
+          // 6'h16: DSTREG <- SREG1
+          // Configure unload
+          ARF_OutCSel = SREG1[1:0];
+          RF_OutASel  = {1'b0, SREG1[1:0]};
+          if (arf_is_selected(SREG1)) begin
+            // Data flowing from ARF
+            //* ARF.OutC could be redirected towards both RF and ARF
+            MuxASel = 2'b01;  // Select ARF.OutC
+            MuxBSel = 2'b01;  // Select ARF.OutC
+          end else begin
+            // Data flowing from RF
+            //* RF output could be redirected only via ALU
+            MuxASel = 2'b00;  // Select ALUOut
+            MuxBSel = 2'b00;  // Select ALUOut
+          end
+          // Configure load
+          if (arf_is_selected(DSTREG)) begin
+            // RF -> ARF
+            ARF_FunSel = 2'b01;  // Set to Load
+            ARF_RegSel = arf_en_from_opcode(DSTREG);
+          end else begin
+            // RF -> RF
+            RF_FunSel = 2'b01;  // Set to Load
+            RF_RegSel = rf_en_from_opcode(DSTREG);
+          end
+          T_Reset = 1'b1;
+        end
+        6'h07, 6'h08, 6'h09, 6'h0A, 6'h0B, 6'h0C, 6'h0D, 6'h0E, 6'h0F, 6'h10, 6'h11, 6'h12, 6'h13, 6'h14, 6'h15: begin
           // 6'h07: DSTREG <- SREG1 + 1
           // 6'h08: DSTREG <- SREG1 - 1
           // 6'h09: DSTREG <- LSL SREG1
@@ -239,34 +269,48 @@ module CPUSystem (
           // 6'h0C: DSTREG <- CSL SREG1
           // 6'h0D: DSTREG <- CSR SREG1
           // 6'h0E: DSTREG <- NOT SREG1
-          //! All operations require loading SREG1 into Scr1
+          // 6'h0F: DSTREG <- SREG1 AND SREG2
+          // 6'h10: DSTREG <- SREG1 OR SREG2
+          // 6'h11: DSTREG <- SREG1 XOR SREG2
+          // 6'h12: DSTREG <- SREG1 AND SREG2
+          // 6'h13: DSTREG <- SREG1 + SREG2
+          // 6'h14: DSTREG <- SREG1 + SREG2 + CARRY
+          // 6'h15: DSTREG <- SREG1 - SREG2
+          //! All operations above require loading SREG1 into Scr1
           // Check if DESTREG == SREG1
           // ! Only applicable for INC and DEC due to built-in register functionality
-          if ((Opcode == 6'h07 || Opcode == 6'h08) && DestSrc1SameCond) begin
+          if ((OPC == 6'h07 || OPC == 6'h08) && DestSrc1SameCond) begin
             // Just apply Inc inside the register
-            if (arf_is_selected(SrcReg1)) begin
-              ARF_RegSel = arf_en_from_opcode(SrcReg1);
-              ARF_FunSel = (Opcode == 6'h07) ? 2'b10 : 2'b11;
+            if (arf_is_selected(SREG1)) begin
+              ARF_RegSel = arf_en_from_opcode(SREG1);
+              ARF_FunSel = (OPC == 6'h07) ? 2'b10 : 2'b11;
             end else begin
-              RF_RegSel = rf_en_from_opcode(SrcReg1);
-              RF_FunSel = (Opcode == 6'h07) ? 2'b10 : 2'b11;
+              RF_RegSel = rf_en_from_opcode(SREG1);
+              RF_FunSel = (OPC == 6'h07) ? 2'b10 : 2'b11;
             end
             T_Reset = 1'b1;
           end else begin
             // Load SREG1 into Scr1
-            load_into_scr(4'b0111, SrcReg1);
+            load_into_scr(4'b0111, SREG1);
           end
+        end
+        6'h17: begin
+          // 6'h17: Rx <- IMMEDIATE
+          RF_FunSel = 2'b01;  // Set to Load
+          RF_RegSel = rf_en_from_opcode({1'b1, RSEL});
+          MuxASel   = 2'b11;  // Select IMUOut ({8'b0, IROut[7:0]})
+          T_Reset   = 1'b1;
         end
         default: T_Reset = 1'b1;
       endcase
     end else if (T[3]) begin
-      case (Opcode)
+      case (OPC)
         6'h07, 6'h08: begin
           // 6'h07: DSTREG <- SREG1 + 1
           // 6'h08: DSTREG <- SREG1 - 1
           // Use register's built-in functionality
           RF_ScrSel = 4'b0111;  // Select Scr1
-          RF_FunSel = (Opcode == 6'h07) ? 2'b10 : 2'b11;  // Set to Inc or Dec
+          RF_FunSel = (OPC == 6'h07) ? 2'b10 : 2'b11;  // Set to Inc or Dec
         end
         6'h09, 6'h0A, 6'h0B, 6'h0C, 6'h0D, 6'h0E: begin
           // 6'h09: DSTREG <- LSL SREG1
@@ -282,16 +326,39 @@ module CPUSystem (
           unload_alu();
           T_Reset = 1'b1;
         end
+        6'h0F, 6'h10, 6'h11, 6'h12, 6'h13, 6'h14, 6'h15: begin
+          // 6'h0F: DSTREG <- SREG1 AND SREG2
+          // 6'h10: DSTREG <- SREG1 OR SREG2
+          // 6'h11: DSTREG <- SREG1 XOR SREG2
+          // 6'h12: DSTREG <- SREG1 AND SREG2
+          // 6'h13: DSTREG <- SREG1 + SREG2
+          // 6'h14: DSTREG <- SREG1 + SREG2 + CARRY
+          // 6'h15: DSTREG <- SREG1 - SREG2
+          //! All operations above require loading SREG2 into Scr2
+          // Load SREG2 into Scr1
+          load_into_scr(4'b1011, SREG2);
+        end
         default: T_Reset = 1'b1;
       endcase
     end else if (T[4]) begin
-      case (Opcode)
+      case (OPC)
         6'h07, 6'h08: begin
           // 6'h07: DSTREG <- SREG1 + 1
           // 6'h08: DSTREG <- SREG1 - 1
           //* Both operations require loading Scr1 into DESTREG
           // Load Scr1 into DSTREG
           unload_scr(3'b100);
+          T_Reset = 1'b1;
+        end
+        6'h0F, 6'h10, 6'h11, 6'h12, 6'h13, 6'h14, 6'h15: begin
+          // 6'h0F: DSTREG <- SREG1 AND SREG2
+          // 6'h10: DSTREG <- SREG1 OR SREG2
+          // 6'h11: DSTREG <- SREG1 XOR SREG2
+          // 6'h12: DSTREG <- SREG1 AND SREG2
+          // 6'h13: DSTREG <- SREG1 + SREG2
+          // 6'h14: DSTREG <- SREG1 + SREG2 + CARRY
+          // 6'h15: DSTREG <- SREG1 - SREG2
+          unload_alu();
           T_Reset = 1'b1;
         end
         default: T_Reset = 1'b1;

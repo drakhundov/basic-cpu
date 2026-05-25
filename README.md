@@ -153,6 +153,15 @@ All instructions are **16-bit** with format:
 | 0x0C | CSL | Dest ← Src << 1 (with carry) | 2 |
 | 0x0D | CSR | Dest ← Src >> 1 (with carry) | 2 |
 | 0x0E | NOT | Dest ← ~Src | 2 |
+| 0x0F | AND | Dest ← Src1 AND Src2 | 2 |
+| 0x10 | ORR | Dest ← Src1 OR Src2 | 2 |
+| 0x11 | XOR | Dest ← Src1 XOR Src2 | 2 |
+| 0x12 | NAND | Dest ← ~(Src1 AND Src2) | 2 |
+| 0x13 | ADD | Dest ← Src1 + Src2 | 2-3 |
+| 0x14 | ADC | Dest ← Src1 + Src2 + C | 2-3 |
+| 0x15 | SUB | Dest ← Src1 - Src2 | 2-3 |
+| 0x16 | MOV | Dest ← Src1 | 1 |
+| 0x17 | IMM | Rx ← Immediate | 1 |
 
 **Example instruction:** INC R1 ← R2
 ```
@@ -241,7 +250,7 @@ Reset → T[0]: Fetch low → T[1]: Fetch high → T[2]: Decode & Execute → T[
 │             └──────┬───────┘                         │
 │                    ↓                                 │
 │            ┌──────────────────┐                      │
-│            │     ALU          │ FlagsOut             │
+│            │     ALU          │                      │
 │            │   (16 functions) │                      │
 │            └──────┬───────────┘                      │
 │                   ↓                                  │

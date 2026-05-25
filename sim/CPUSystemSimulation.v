@@ -7,12 +7,12 @@ module CPUSystemSimulation ();
   wire clock;
   wire reset;
 
-  wire [5:0] Opcode;
-  wire [1:0] RegSel;
-  wire [7:0] Address;
-  wire [2:0] DestReg;
-  wire [2:0] SrcReg1;
-  wire [2:0] SrcReg2;
+  wire [5:0] OPC;
+  wire [1:0] RSEL;
+  wire [7:0] ADDR;
+  wire [2:0] DSTREG;
+  wire [2:0] SREG1;
+  wire [2:0] SREG2;
 
   CrystalOscillator clk ();
   ResetGenerator rg ();
@@ -100,12 +100,12 @@ module CPUSystemSimulation ();
     end
   endtask
 
-  assign Opcode  = CPUSys.Opcode;
-  assign RegSel  = CPUSys.RegSel;
-  assign Address = CPUSys.Address;
-  assign DestReg = CPUSys.DestReg;
-  assign SrcReg1 = CPUSys.SrcReg1;
-  assign SrcReg2 = CPUSys.SrcReg2;
+  assign OPC  = CPUSys.OPC;
+  assign RSEL  = CPUSys.RSEL;
+  assign ADDR = CPUSys.ADDR;
+  assign DSTREG = CPUSys.DSTREG;
+  assign SREG1 = CPUSys.SREG1;
+  assign SREG2 = CPUSys.SREG2;
 
   initial begin
     F.SimulationName = "CPUSystem";
